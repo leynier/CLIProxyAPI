@@ -828,7 +828,10 @@ func (m *Manager) persist(ctx context.Context, auth *Auth) error {
 			return errWait
 		}
 		defer releaseFg()
-		_, err := store.Save(ctx, auth)
+		location, err := store.Save(ctx, auth)
+		if err == nil && requiresPersistedAuthMutation(ctx) && strings.TrimSpace(location) == "" {
+			return fmt.Errorf("credential storage skipped durable mutation")
+		}
 		return err
 	}
 
@@ -840,6 +843,9 @@ func (m *Manager) persist(ctx context.Context, auth *Auth) error {
 		return errWait
 	}
 	defer releaseFg()
-	_, err := store.Save(ctx, auth)
+	location, err := store.Save(ctx, auth)
+	if err == nil && requiresPersistedAuthMutation(ctx) && strings.TrimSpace(location) == "" {
+		return fmt.Errorf("credential storage skipped durable mutation")
+	}
 	return err
 }
