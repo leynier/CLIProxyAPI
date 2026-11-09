@@ -14,9 +14,11 @@ routing:
 
 `strategy` accepts the existing `round-robin`, `fill-first` and `weighted-round-robin` strategies; omission inherits the global strategy. `precedence` accepts `session` (default) or `priority`. Overrides are ignored when session affinity is disabled. The same fields work in legacy and v8 configuration layouts.
 
-With priority precedence, new conversations use the highest eligible credential priority tier. An established conversation keeps its credential while that credential remains in the highest eligible tier. If a higher tier recovers or a credential's priority changes, the next request rebinds through the provider's fallback strategy. Responses already in progress are not interrupted. Moving between credentials may lose prompt-cache reuse. Equal-priority sessions remain sticky.
+With priority precedence, new conversations use the highest eligible credential priority tier. An established conversation keeps its credential while that credential remains in the highest eligible tier. If a higher tier recovers or a credential's priority changes, the next request rebinds through the provider's fallback strategy. Responses already in progress are not interrupted. Moving between credentials may lose prompt-cache reuse. Equal-priority sessions remain sticky. This also applies to `session-affinity-rebind-on: never`: priority precedence can replace a lower-tier binding, while the never policy remains authoritative within the highest tier.
 
 Explicit sessions, parent/subagent and guardian inheritance, and prefix-matched conversations follow the same precedence. Model support, cooldown, retry exclusions and explicit credential pins retain their existing authority. Temporary failures retain the existing `session-affinity-rebind-on` behavior within a priority tier, but cannot retain a lower-tier binding when a higher eligible tier exists.
+
+Weighted routing and pinned-traffic accounting use the effective provider fallback, including when it differs from the global strategy.
 
 The provider override also applies when execution uses the mixed entrypoint for a homogeneous provider pool. The requested provider set determines this policy before credential availability, retries or model filtering; a temporarily unavailable provider does not turn a heterogeneous request into a homogeneous one. Heterogeneous mixed pools retain the global policy because they do not have one unambiguous provider override.
 

@@ -62,6 +62,69 @@ func TestProviderAffinityPolicyDistributesNewSessionsWithinHighestTier(t *testin
 	}
 }
 
+func TestProviderAffinityPolicyUsesOverrideForWeightedReservations(t *testing.T) {
+	for _, sessionless := range []bool{false, true} {
+		for _, weightedOverride := range []bool{false, true} {
+			t.Run(fmt.Sprintf("sessionless=%t/weighted-override=%t", sessionless, weightedOverride), func(t *testing.T) {
+				var fallback Selector = &WeightedRoundRobinSelector{}
+				var override Selector = &RoundRobinSelector{}
+				if weightedOverride {
+					fallback, override = &FillFirstSelector{}, &WeightedRoundRobinSelector{}
+				}
+				selector := NewSessionAffinitySelectorWithConfig(SessionAffinityConfig{
+					Fallback: fallback,
+					ProviderOverrides: map[string]SessionAffinityProviderOverride{
+						"claude": {Fallback: override, PriorityPrecedence: true},
+					},
+				})
+				t.Cleanup(selector.Stop)
+				auths := []*Auth{priorityPolicyAuth("a", "claude", 4), priorityPolicyAuth("b", "claude", 4)}
+				auths[0].Attributes[AttributeWeight] = "9"
+				counts := map[string]int{}
+				for i := range 10 {
+					opts := priorityPolicyOptions(fmt.Sprintf("override-%d", i))
+					if sessionless {
+						opts = cliproxyexecutor.Options{}
+					}
+					counts[pickPriorityPolicy(t, selector, "claude", opts, auths)]++
+				}
+				wantA, wantB := 5, 5
+				if weightedOverride {
+					wantA, wantB = 9, 1
+				}
+				if counts["a"] != wantA || counts["b"] != wantB {
+					t.Fatalf("provider override distribution = %v, want a=%d b=%d", counts, wantA, wantB)
+				}
+			})
+		}
+	}
+}
+
+func TestProviderAffinityPriorityPrecedenceWithNeverRebind(t *testing.T) {
+	for _, strict := range []bool{false, true} {
+		t.Run(fmt.Sprint(strict), func(t *testing.T) {
+			selector := NewSessionAffinitySelectorWithConfig(SessionAffinityConfig{
+				Fallback: &FillFirstSelector{}, RebindOn: SessionAffinityRebindOnNever,
+				ProviderOverrides: map[string]SessionAffinityProviderOverride{
+					"claude": {Fallback: &RoundRobinSelector{}, PriorityPrecedence: strict},
+				},
+			})
+			t.Cleanup(selector.Stop)
+			lower := priorityPolicyAuth("lower", "claude", 2)
+			higher := priorityPolicyAuth("higher", "claude", 4)
+			opts := priorityPolicyOptions("never-rebind")
+			pickPriorityPolicy(t, selector, "claude", opts, []*Auth{lower})
+			want := "lower"
+			if strict {
+				want = "higher"
+			}
+			if got := pickPriorityPolicy(t, selector, "claude", opts, []*Auth{lower, higher}); got != want {
+				t.Fatalf("after recovery = %s, want %s", got, want)
+			}
+		})
+	}
+}
+
 func TestProviderAffinityPolicyPreemptsOnlyWhenOptedIn(t *testing.T) {
 	for _, strict := range []bool{false, true} {
 		t.Run(fmt.Sprint(strict), func(t *testing.T) {
